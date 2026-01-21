@@ -35,7 +35,7 @@ ENDTIME = "19:10:00"  # 根据学校的预约座位时间+1min即可
 
 ENABLE_SLIDER = True  # 是否有滑块验证（调试阶段先关闭）
 MAX_ATTEMPT = 205  # 最大尝试次数
-RESERVE_NEXT_DAY = False  # 预约明天而不是今天的
+RESERVE_NEXT_DAY = True  # 预约明天而不是今天的
 
 
 def login_and_reserve(users, usernames, passwords, action, success_list=None):
