@@ -62,6 +62,158 @@ MAX_ATTEMPT = 205  # 最大尝试次数
 RESERVE_NEXT_DAY = False  # 预约明天而不是今天的
 
 
+def _get_beijing_target_from_endtime() -> datetime.datetime:
+    """根据 ENDTIME 计算目标时间（北京时间，当天 ENDTIME 减 1 分钟）。"""
+    today = _beijing_now().date()
+    h, m, s = map(int, ENDTIME.split(":"))
+    end_dt = datetime.datetime(
+        year=today.year,
+        month=today.month,
+        day=today.day,
+        hour=h,
+        minute=m,
+        second=s,
+        tzinfo=ZoneInfo("Asia/Shanghai"),
+    )
+    return end_dt - datetime.timedelta(minutes=1)
+
+
+def strategic_first_attempt(
+    users,
+    usernames: str | None,
+    passwords: str | None,
+    action: bool,
+    target_dt: datetime.datetime,
+    success_list=None,
+):
+    """只在第一次调用时使用的“有策略抢座”。
+
+    - 在目标时间前 2 分钟左右开始（由 Actions 的 cron 控制）；
+    - 目标时间前 40 秒：预先获取页面 token / algorithm value；
+    - 目标时间前 15 秒：预先完成滑块并拿到 validate；
+    - 目标时间到达瞬间：直接调用 get_submit 提交一次；
+    - 之后的重试逻辑仍交给原有 while 循环和 login_and_reserve。
+    """
+    if success_list is None:
+        success_list = [False] * len(users)
+
+    now = _beijing_now()
+    # 如果已经过了目标时间，直接退回到普通逻辑由外层处理
+    if now >= target_dt:
+        return success_list
+
+    # 等到“目标时间前 2 分钟”附近再开始策略流程（一般由 cron 提前 2 分钟启动）
+    two_min_before = target_dt - datetime.timedelta(minutes=2)
+    while _beijing_now() < two_min_before:
+        time.sleep(0.5)
+
+    usernames_list, passwords_list = None, None
+    if action:
+        if not usernames or not passwords:
+            raise Exception("USERNAMES or PASSWORDS not configured correctly in env")
+        usernames_list = usernames.split(",")
+        passwords_list = passwords.split(",")
+        if len(usernames_list) != len(passwords_list):
+            raise Exception("USERNAMES and PASSWORDS count mismatch")
+
+    current_dayofweek = get_current_dayofweek(action)
+
+    for index, user in enumerate(users):
+        # 已经成功的配置不再参与策略尝试
+        if success_list[index]:
+            continue
+
+        username = user["username"]
+        password = user["password"]
+        times = user["times"]
+        roomid = user["roomid"]
+        seatid = user["seatid"]
+        daysofweek = user["daysofweek"]
+
+        # 今天不预约该配置，跳过
+        if current_dayofweek not in daysofweek:
+            logging.info("[strategic] Today not set to reserve, skip this config")
+            continue
+
+        # Actions 模式：根据索引或单账号覆盖用户名和密码
+        if action:
+            if len(usernames_list) == 1:
+                username = usernames_list[0]
+                password = passwords_list[0]
+            elif index < len(usernames_list):
+                username = usernames_list[index]
+                password = passwords_list[index]
+            else:
+                logging.error(
+                    "[strategic] Index out of range for USERNAMES/PASSWORDS, skipping this config."
+                )
+                continue
+
+        # seatid 可能是字符串或列表，只在策略阶段针对第一个座位做一次精准尝试
+        seat_list = [seatid] if isinstance(seatid, str) else seatid
+        if not seat_list:
+            logging.error("[strategic] Empty seat list, skip this config")
+            continue
+
+        logging.info(
+            f"[strategic] Start first attempt for {username} -- {times} -- {seat_list}"
+        )
+
+        # 1. 在 [T-120s, T-40s] 区间内完成登录和基础 session 准备
+        s = reserve(
+            sleep_time=SLEEPTIME,
+            max_attempt=MAX_ATTEMPT,
+            enable_slider=ENABLE_SLIDER,
+            reserve_next_day=RESERVE_NEXT_DAY,
+        )
+        s.get_login_status()
+        s.login(username, password)
+        s.requests.headers.update({"Host": "office.chaoxing.com"})
+
+        # 2. 等到“目标时间前 40 秒”，预先获取页面 token / algorithm value
+        forty_before = target_dt - datetime.timedelta(seconds=40)
+        while _beijing_now() < forty_before:
+            time.sleep(0.2)
+
+        first_seat = seat_list[0]
+        token, value = s._get_page_token(
+            s.url.format(roomid, first_seat), require_value=True
+        )
+        if not token:
+            logging.error("[strategic] Failed to prefetch token, skip this config")
+            continue
+        logging.info(f"[strategic] Pre-fetched token: {token}, value: {value}")
+
+        # 3. 等到“目标时间前 15 秒”，做滑块并拿到 validate（如果启用了滑块）
+        fifteen_before = target_dt - datetime.timedelta(seconds=15)
+        while _beijing_now() < fifteen_before:
+            time.sleep(0.1)
+
+        captcha = ""
+        if ENABLE_SLIDER:
+            captcha = s.resolve_captcha()
+            logging.info(f"[strategic] Pre-resolved captcha: {captcha}")
+
+        # 4. 等到目标时间，立刻提交一次
+        while _beijing_now() < target_dt:
+            time.sleep(0.02)
+
+        logging.info("[strategic] Reached target time, do first submit now")
+        suc = s.get_submit(
+            url=s.submit_url,
+            times=times,
+            token=token,
+            roomid=roomid,
+            seatid=first_seat,
+            captcha=captcha,
+            action=action,
+            value=value,
+        )
+        success_list[index] = suc
+
+    return success_list
+
+
 def login_and_reserve(users, usernames, passwords, action, success_list=None):
     logging.info(
         f"Global settings: \nSLEEPTIME: {SLEEPTIME}\nENDTIME: {ENDTIME}\nENABLE_SLIDER: {ENABLE_SLIDER}\nRESERVE_NEXT_DAY: {RESERVE_NEXT_DAY}"
