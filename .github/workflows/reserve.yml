@@ -1,6 +1,6 @@
 on:
   schedule:
-    - cron: "50 4 * * *"
+    - cron: "5 13 * * *"
   workflow_dispatch:        # 允许手动开/关
 
 jobs:
