@@ -16,9 +16,9 @@
     },
         {"username": "",
         "password": "",
-        "times": ["21:40","22:00"],
+        "times": ["21:45","22:00"],
         "roomid":"9928",
-        "seatid":["023"],
+        "seatid":["011"],
         "daysofweek": ["Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     }
     ]
