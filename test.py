@@ -14,7 +14,7 @@ def beijing_time_to_cron(time_str: str) -> str:
         raise ValueError("时间格式必须是 HH:MM，例如 04:50 或 18:30")
 
     if not (0 <= hour <= 23 and 0 <= minute <= 59):
-        raise ValueError("小时必须在 0-23，分钟必须在 0-59 之间")14
+        raise ValueError("小时必须在 0-23，分钟必须在 0-59 之间")
 
     # 北京时间是 UTC+8，GitHub Actions 的 cron 用 UTC
     # 所以要把北京时间减去 8 小时，得到 UTC 时间
