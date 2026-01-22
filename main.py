@@ -277,8 +277,11 @@ def login_and_reserve(users, usernames, passwords, action, success_list=None):
 
 
 def main(users, action=False):
+    target_dt = _get_beijing_target_from_endtime()
     current_time = get_hms(action)
-    logging.info(f"start time {get_log_time(action)}, action {'on' if action else 'off'}")
+    logging.info(
+        f"start time {get_log_time(action)}, action {'on' if action else 'off'}, target_dt {target_dt}"
+    )
     attempt_times = 0
     usernames, passwords = None, None
     if action:
@@ -288,14 +291,27 @@ def main(users, action=False):
     today_reservation_num = sum(
         1 for d in users if current_dayofweek in d.get("daysofweek")
     )
+
+    # 只在 GitHub Actions 模式下执行一次“有策略”的第一次尝试
+    strategic_done = False
+
     while current_time < ENDTIME:
         attempt_times += 1
-        # try:
-        success_list = login_and_reserve(
-            users, usernames, passwords, action, success_list
-        )
-        # except Exception as e:
-        #     print(f"An error occurred: {e}")
+
+        if not strategic_done and action:
+            success_list = strategic_first_attempt(
+                users, usernames, passwords, action, target_dt, success_list
+            )
+            strategic_done = True
+        else:
+            # 后续尝试使用原有逻辑
+            # try:
+            success_list = login_and_reserve(
+                users, usernames, passwords, action, success_list
+            )
+            # except Exception as e:
+            #     print(f"An error occurred: {e}")
+
         print(
             f"attempt time {attempt_times}, time now {current_time}, success list {success_list}"
         )
