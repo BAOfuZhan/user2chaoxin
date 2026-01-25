@@ -14,8 +14,8 @@ from utils import reserve as Reserve
 # ======================================================
 
 # TODO: 在这里填写你的测试账号信息
-TEST_USERNAME = "18295178271"
-TEST_PASSWORD = "suyu940513"
+TEST_USERNAME = ""
+TEST_PASSWORD = ""
 
 # 教室/房间、座位、时间段
 TEST_ROOM_ID = "9928"          # 房间号，例如 9928
