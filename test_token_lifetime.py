@@ -14,8 +14,8 @@ from utils import reserve as Reserve
 # ======================================================
 
 # TODO: 在这里填写你的测试账号信息
-TEST_USERNAME = ""
-TEST_PASSWORD = ""
+TEST_USERNAME = "18295178271"
+TEST_PASSWORD = "suyu940513"
 
 # 教室/房间、座位、时间段
 TEST_ROOM_ID = "9928"          # 房间号，例如 9928
@@ -261,33 +261,46 @@ def test_captcha_first_use_delay(delay_sec: float = 20.0):
     )
 
 
-def test_captcha_stash_two(interval_sec: float = 1.0):
-    """测试是否可以“囤”两份 captcha，并间隔 interval_sec 秒各用一次。
+def test_captcha_stash_three(interval_sec: float = 2.0):
+    """测试是否可以“囤”三份 captcha，先整体等待 12 秒，再按 interval_sec 秒间隔依次用掉。
 
     策略：
-    - 登录一次，连续获取 captcha1 和 captcha2；
+    - 登录一次，连续获取 captcha1、captcha2、captcha3；
     - 记录起始时间；
-    - 立刻用 captcha1 + 新 token 提交一次（attempt 1）；
-    - 等待 interval_sec 秒，再用 captcha2 + 新 token 提交一次（attempt 2）；
-    - 观察两次是否都是正常业务错误，而不是“验证码校验未通过”。
+    - 等待 12 秒；
+    - 然后用 captcha1 + 同一个 token 提交一次（attempt 1）；
+    - 等待 interval_sec 秒，用 captcha2 + 同一个 token 提交一次（attempt 2）；
+    - 再等待 interval_sec 秒，用 captcha3 + 同一个 token 提交一次（attempt 3）；
+    - 观察三次是否都是正常业务错误，而不是“验证码校验未通过”。
     """
     if not TEST_ENABLE_SLIDER:
-        logging.error("[test-captcha-stash] 当前未启用滑块验证(TEST_ENABLE_SLIDER=False)，无法测试囤两份 captcha")
+        logging.error("[test-captcha-stash] 当前未启用滑块验证(TEST_ENABLE_SLIDER=False)，无法测试囤多份 captcha")
         return
 
     s, first_seat = _build_session()
     if s is None:
         return
 
-    logging.info(f"[test-captcha-stash] Start stash-two test, interval={interval_sec}s")
+    logging.info(f"[test-captcha-stash] Start stash-three test, interval={interval_sec}s")
 
-    # 连续获取两份 captcha
+    # 连续获取三份 captcha
     captcha1 = s.resolve_captcha()
     logging.info("[test-captcha-stash] Got captcha1")
     captcha2 = s.resolve_captcha()
     logging.info("[test-captcha-stash] Got captcha2")
+    captcha3 = s.resolve_captcha()
+    logging.info("[test-captcha-stash] Got captcha3")
 
     start_ts = time.time()
+
+    # 先整体等待 12 秒，再开始第一次使用 captcha
+    initial_delay = 11.0
+    target_initial = start_ts + initial_delay
+    logging.info(
+        f"[test-captcha-stash] wait {initial_delay}s before first use of captchas (until {target_initial:.3f})"
+    )
+    while time.time() < target_initial:
+        time.sleep(0.1)
 
     # 使用 captcha1（第一次）
     token1, value1 = s._get_page_token(
@@ -304,33 +317,53 @@ def test_captcha_stash_two(interval_sec: float = 1.0):
         token=token1,
         value=value1,
     )
-    elapsed1 = time.time() - start_ts
+    attempt1_ts = time.time()
+    elapsed1 = attempt1_ts - start_ts
     logging.info(
         f"[test-captcha-stash] attempt1 (captcha1), elapsed={elapsed1:.3f}s, resp={resp1}"
     )
 
-    # 间隔 interval_sec 秒后使用 captcha2
-    target_ts = start_ts + interval_sec
+    # 间隔 interval_sec 秒后使用 captcha2（第二次）
+    target_ts = attempt1_ts + interval_sec
+    logging.info(
+        f"[test-captcha-stash] waiting until {target_ts:.3f} for attempt2 (interval={interval_sec}s)"
+    )
     while time.time() < target_ts:
         time.sleep(0.1)
 
-    token2, value2 = s._get_page_token(
-        s.url.format(TEST_ROOM_ID, first_seat), require_value=True
-    )
-    if not token2:
-        logging.error("[test-captcha-stash] Failed to get token2, abort")
-        return
     resp2 = s.burst_submit_once(
         times=TEST_TIMES,
         roomid=TEST_ROOM_ID,
         seatid=first_seat,
         captcha=captcha2,
-        token=token2,
-        value=value2,
+        token=token1,
+        value=value1,
     )
-    elapsed2 = time.time() - start_ts
+    attempt2_ts = time.time()
+    elapsed2 = attempt2_ts - start_ts
     logging.info(
         f"[test-captcha-stash] attempt2 (captcha2), elapsed={elapsed2:.3f}s, resp={resp2}"
+    )
+
+    # 再间隔 interval_sec 秒后使用 captcha3（第三次）
+    target_ts = attempt2_ts + interval_sec
+    logging.info(
+        f"[test-captcha-stash] waiting until {target_ts:.3f} for attempt3 (interval={interval_sec}s)"
+    )
+    while time.time() < target_ts:
+        time.sleep(0.1)
+
+    resp3 = s.burst_submit_once(
+        times=TEST_TIMES,
+        roomid=TEST_ROOM_ID,
+        seatid=first_seat,
+        captcha=captcha3,
+        token=token1,
+        value=value1,
+    )
+    elapsed3 = time.time() - start_ts
+    logging.info(
+        f"[test-captcha-stash] attempt3 (captcha3), elapsed={elapsed3:.3f}s, resp={resp3}"
     )
 
 
@@ -340,7 +373,7 @@ if __name__ == "__main__":
     print("2. 测试滑块验证码 captcha 有效时间 (captcha lifetime)")
     print("3. 测试滑块验证码是否一次性 (captcha single-use)")
     print("4. 测试滑块验证码首次在指定延迟后使用 (captcha first-use delay)")
-    print("5. 测试是否可以囤两份 captcha 并间隔 1 秒使用 (captcha stash two)")
+    print("5. 测试是否可以囤三份 captcha 并间隔 2 秒依次使用 (captcha stash three)")
     choice = input("请输入选项 (1/2/3/4/5): ").strip()
 
     if choice == "1":
@@ -353,7 +386,7 @@ if __name__ == "__main__":
         # 默认测试 20 秒后首次使用；你也可以在这里改成其他秒数
         test_captcha_first_use_delay(20.0)
     elif choice == "5":
-        # 默认两次间隔 1 秒，可以在函数调用里改间隔
-        test_captcha_stash_two(1.0)
+        # 默认三次间隔 2 秒，可以在函数调用里改间隔
+        test_captcha_stash_three(2.0)
     else:
         print("无效选项，已退出。")

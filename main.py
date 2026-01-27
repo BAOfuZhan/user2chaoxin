@@ -72,11 +72,12 @@ RELOGIN_EVERY_LOOP = True
 STRATEGY_LOGIN_LEAD_SECONDS = 18
 # STRATEGY_SLIDER_LEAD_SECONDS: 在目标时间前多少秒开始进行滑块验证
 STRATEGY_SLIDER_LEAD_SECONDS = 10
-# TARGET_OFFSET1_MS / TARGET_OFFSET2_MS:
-# 在目标时间点之后再延迟多少毫秒提交，分别用于第 1 次 / 第 2 次带验证码的提交
-# 例如：600ms 和 1300ms
-TARGET_OFFSET1_MS = 3000
-TARGET_OFFSET2_MS = 5300
+# TARGET_OFFSET1_MS / TARGET_OFFSET2_MS / TARGET_OFFSET3_MS:
+# 在目标时间点之后再延迟多少毫秒提交，分别用于第 1 / 2 / 3 次带验证码的提交
+# 例如：600ms、1300ms、2000ms
+TARGET_OFFSET1_MS = 1000
+TARGET_OFFSET2_MS = 3000
+TARGET_OFFSET3_MS = 6000
 
 
 def _get_beijing_target_from_endtime() -> datetime.datetime:
@@ -176,7 +177,7 @@ def strategic_first_attempt(
             f"[strategic] Start first attempt for {username} -- {times} -- {seat_list}"
         )
 
-        # 1. 在 [T-30s, T] 区间内完成登录和基础 session + 获取页面 token
+        # 1. 在 [T-30s, T] 区间内完成登录和基础 session（不提前获取页面 token）
         s = reserve(
             sleep_time=SLEEPTIME,
             max_attempt=MAX_ATTEMPT,
@@ -188,27 +189,15 @@ def strategic_first_attempt(
         s.requests.headers.update({"Host": "office.chaoxing.com"})
 
         first_seat = seat_list[0]
-        token, value = s._get_page_token(
-            s.url.format(roomid, first_seat), require_value=True
-        )
-        if not token:
-            logging.error("[strategic] Failed to prefetch token, skip this config")
-            continue
-        logging.info(f"[strategic] Pre-fetched token: {token}, value: {value}")
 
-        # 2. 等到“目标时间前若干秒”，做滑块并拿到 validate（如果启用了滑块）
+        # 2. 等到“目标时间前若干秒”，预热滑块验证码，提前拿到多份 validate（如果启用了滑块）
         ten_before = target_dt - datetime.timedelta(seconds=STRATEGY_SLIDER_LEAD_SECONDS)
         while _beijing_now() < ten_before:
             time.sleep(0.1)
 
-        # 2. 等到“目标时间前若干秒”，做滑块并拿到两份 validate（如果启用了滑块）
-        ten_before = target_dt - datetime.timedelta(seconds=STRATEGY_SLIDER_LEAD_SECONDS)
-        while _beijing_now() < ten_before:
-            time.sleep(0.1)
-
-        captcha1 = captcha2 = ""
+        captcha1 = captcha2 = captcha3 = ""
         if ENABLE_SLIDER:
-            # 第一份 captcha
+            # 第一份 captcha，用于第一次提交
             captcha1 = s.resolve_captcha()
             if not captcha1:
                 logging.warning(
@@ -217,7 +206,7 @@ def strategic_first_attempt(
                 captcha1 = s.resolve_captcha()
             logging.info(f"[strategic] Pre-resolved captcha1: {captcha1}")
 
-            # 第二份 captcha，用于第二次带验证码提交
+            # 第二份 captcha，用于第二次提交
             captcha2 = s.resolve_captcha()
             if not captcha2:
                 logging.warning(
@@ -226,44 +215,92 @@ def strategic_first_attempt(
                 captcha2 = s.resolve_captcha()
             logging.info(f"[strategic] Pre-resolved captcha2: {captcha2}")
 
-        # 3. 第一次带验证码提交：目标时间 + TARGET_OFFSET1_MS 毫秒
-        send_dt1 = target_dt + datetime.timedelta(milliseconds=TARGET_OFFSET1_MS)
+            # 第三份 captcha，用于第三次提交
+            captcha3 = s.resolve_captcha()
+            if not captcha3:
+                logging.warning(
+                    "[strategic] Third captcha failed or empty, retrying once more"
+                )
+                captcha3 = s.resolve_captcha()
+            logging.info(f"[strategic] Pre-resolved captcha3: {captcha3}")
+
+        # 3. 第一次提交：先在目标时间 + 1 秒时获取页面 token，然后再延迟 TARGET_OFFSET1_MS 毫秒提交
+        token_fetch_dt1 = target_dt + datetime.timedelta(seconds=1)
+        while _beijing_now() < token_fetch_dt1:
+            time.sleep(0.02)
+
+        logging.info(
+            f"[strategic] Fetch page token for first submit at {token_fetch_dt1} (target_dt + 1s)"
+        )
+        token1, value1 = s._get_page_token(
+            s.url.format(roomid, first_seat), require_value=True
+        )
+        if not token1:
+            logging.error("[strategic] Failed to get page token for first submit, skip this config")
+            continue
+        logging.info(f"[strategic] Got page token for first submit: {token1}, value: {value1}")
+
+        # 再从拿到 token 的时刻开始，延迟 TARGET_OFFSET1_MS 毫秒再提交
+        send_dt1 = token_fetch_dt1 + datetime.timedelta(milliseconds=TARGET_OFFSET1_MS)
         while _beijing_now() < send_dt1:
             time.sleep(0.02)
 
         logging.info(
-            f"[strategic] First submit at {send_dt1} (offset {TARGET_OFFSET1_MS}ms)"
+            f"[strategic] First submit at {send_dt1} (1s after target_dt + {TARGET_OFFSET1_MS}ms)"
         )
         suc = s.get_submit(
             url=s.submit_url,
             times=times,
-            token=token,
+            token=token1,
             roomid=roomid,
             seatid=first_seat,
             captcha=captcha1,
             action=action,
-            value=value,
+            value=value1,
         )
 
-        # 如果第一次已经成功，则不再进行第二次提交
+        # 如果第一次没有成功：复用第一次获取的页面 token，再延迟 TARGET_OFFSET2_MS 毫秒提交第二次
         if not suc:
-            # 4. 第二次带验证码提交：目标时间 + TARGET_OFFSET2_MS 毫秒
-            send_dt2 = target_dt + datetime.timedelta(milliseconds=TARGET_OFFSET2_MS)
+            logging.info("[strategic] First submit failed, prepare second submit with same page token")
+
+            send_dt2 = _beijing_now() + datetime.timedelta(milliseconds=TARGET_OFFSET2_MS)
             while _beijing_now() < send_dt2:
                 time.sleep(0.02)
 
             logging.info(
-                f"[strategic] Second submit at {send_dt2} (offset {TARGET_OFFSET2_MS}ms)"
+                f"[strategic] Second submit at {send_dt2} (now + {TARGET_OFFSET2_MS}ms) with reused page token"
             )
             suc = s.get_submit(
                 url=s.submit_url,
                 times=times,
-                token=token,
+                token=token1,
                 roomid=roomid,
                 seatid=first_seat,
                 captcha=captcha2,
                 action=action,
-                value=value,
+                value=value1,
+            )
+
+        # 如果第二次仍未成功：继续复用同一个 token，再延迟 TARGET_OFFSET3_MS 毫秒提交第三次
+        if not suc:
+            logging.info("[strategic] Second submit failed, prepare third submit with same page token")
+
+            send_dt3 = _beijing_now() + datetime.timedelta(milliseconds=TARGET_OFFSET3_MS)
+            while _beijing_now() < send_dt3:
+                time.sleep(0.02)
+
+            logging.info(
+                f"[strategic] Third submit at {send_dt3} (now + {TARGET_OFFSET3_MS}ms) with reused page token"
+            )
+            suc = s.get_submit(
+                url=s.submit_url,
+                times=times,
+                token=token1,
+                roomid=roomid,
+                seatid=first_seat,
+                captcha=captcha3,
+                action=action,
+                value=value1,
             )
 
         success_list[index] = suc
