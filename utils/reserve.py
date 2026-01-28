@@ -37,7 +37,8 @@ class reserve:
         self.fail_dict = []
         self.submit_msg = []
         self.requests = requests.session()
-        self.token_pattern = re.compile("token = '(.*?)'")
+        # 预编译 submit_enc 提取正则，避免每次重新解析
+        self.submit_enc_pattern = re.compile(r'id="submit_enc"\s+value="(.*?)")
         self.headers = {
             "Referer": "https://office.chaoxing.com/",
             "Host": "captcha.chaoxing.com",
@@ -79,13 +80,13 @@ class reserve:
         因此这里直接用 submit_enc 作为两者。
         """
         response = self.requests.get(url=url, verify=False)
-        html = response.content.decode("utf-8")
-        # token 在 id="submit_enc" 的隐藏 input 中
-        token_matches = re.findall(r'id="submit_enc"\s+value="(.*?)"', html)
-        if not token_matches:
+        # 直接使用 requests 的 text 解码，并用预编译正则提取，提高一点点性能
+        html = response.text
+        match = self.submit_enc_pattern.search(html)
+        if not match:
             logging.error(f"Failed to get token from {url}")
             return "", ""
-        token = token_matches[0]
+        token = match.group(1)
         # 现在页面没有单独的 algorithm 字段，直接复用 submit_enc
         algorithm_value = token if require_value else ""
         return token, algorithm_value
