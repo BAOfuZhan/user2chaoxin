@@ -38,7 +38,7 @@ class reserve:
         self.submit_msg = []
         self.requests = requests.session()
         # 预编译 submit_enc 提取正则，避免每次重新解析
-        self.submit_enc_pattern = re.compile(r'id="submit_enc"\s+value="(.*?)")
+        self.submit_enc_pattern = re.compile(r'id="submit_enc"\s+value="(.*?)"')
         self.headers = {
             "Referer": "https://office.chaoxing.com/",
             "Host": "captcha.chaoxing.com",
