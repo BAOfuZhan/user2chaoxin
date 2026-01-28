@@ -73,12 +73,12 @@ STRATEGY_LOGIN_LEAD_SECONDS = 18
 # STRATEGY_SLIDER_LEAD_SECONDS: 在目标时间前多少秒开始进行滑块验证
 STRATEGY_SLIDER_LEAD_SECONDS = 10
 # FIRST_SUBMIT_OFFSET_MS: 第一次提交时，在目标时间之后再延迟多少毫秒去获取 token 并立即提交
-FIRST_SUBMIT_OFFSET_MS = 4
+FIRST_SUBMIT_OFFSET_MS = 2
 # TARGET_OFFSET2_MS / TARGET_OFFSET3_MS:
 # 在第一次失败后，再额外延迟多少毫秒提交第二 / 第三次带验证码的请求
 # 例如：1200ms、1500ms
-TARGET_OFFSET2_MS = 1200
-TARGET_OFFSET3_MS = 1500
+TARGET_OFFSET2_MS = 10
+TARGET_OFFSET3_MS = 1100
 
 
 def _get_beijing_target_from_endtime() -> datetime.datetime:
