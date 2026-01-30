@@ -30,9 +30,19 @@ while true; do
 
   # 有可能没有实际内容（例如权限变化），commit 可能失败，忽略错误继续下一轮
   if git commit -m "$MSG"; then
-    # 推送失败（网络、权限等）时，不退出循环，仅提示
+    # 推送失败（网络、权限等）时，尝试先拉取再推送
     if ! git push origin "$BRANCH"; then
-      echo "[auto-commit] git push 失败，请检查网络或凭据" >&2
+      echo "[auto-commit] git push 失败，尝试拉取远程更改..." >&2
+      if git pull --rebase origin "$BRANCH"; then
+        echo "[auto-commit] 拉取成功，重试推送..."
+        if git push origin "$BRANCH"; then
+          echo "[auto-commit] 提交并推送成功"
+        else
+          echo "[auto-commit] 重试推送仍然失败，请检查网络或凭据" >&2
+        fi
+      else
+        echo "[auto-commit] 拉取失败，可能存在冲突，请手动处理" >&2
+      fi
     else
       echo "[auto-commit] 提交并推送成功"
     fi
