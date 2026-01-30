@@ -131,3 +131,4 @@ test.json
 
 # Local scripts
 switch_remote.py
+workers/
