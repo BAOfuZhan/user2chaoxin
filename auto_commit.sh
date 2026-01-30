@@ -8,7 +8,7 @@
 set -euo pipefail
 
 BRANCH="main"               # 如需其他分支可以改这里
-INTERVAL=5                   # 检查间隔秒数
+INTERVAL=5                    # 检查间隔秒数
 
 while true; do
   # 检查工作区是否有改动
