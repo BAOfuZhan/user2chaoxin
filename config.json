@@ -3,9 +3,9 @@
     "reserve": [
 
         {
-            "username": "18339439007",
-            "password": "2802909619a@",
-            "times": ["21:30", "22:00"],
+            "username": "",
+            "password": "",
+            "times": ["20:00", "22:00"],
             "roomid": "6656",
             "seatid": ["120"],
             "seatPageId": "6656",
@@ -15,11 +15,11 @@
     ],
 
     "strategy": {
-        "_comment_login_lead_seconds": "在目标时间前多少秒开始执行登录 + 获取 token 的预热逻辑，默认 30。",
+        "_comment_login_lead_seconds": "在目标时间前多少秒开始执行登录 + 获取 token 的预热逻辑，。",
         "login_lead_seconds": 15,
 
         "_comment_slider_lead_seconds": "在目标时间前多少秒开始执行滑块验证，默认 10。",
-        "slider_lead_seconds": 10
+        "slider_lead_seconds": 11
     },
 
     "_comment_tulingcloud": "图灵云打码平台配置（可选，用于本地开发测试，GitHub Actions 中从 secrets 读取）",
