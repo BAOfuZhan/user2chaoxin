@@ -36,14 +36,14 @@ def enc(submit_info):
     return md5(seq.encode("utf-8")).hexdigest()
 
 
-def generate_captcha_key(timestamp: int):
+def generate_captcha_key(timestamp: int, captcha_type: str = "slide"):
     captcha_key = md5((str(timestamp) + str(uuid1())).encode("utf-8")).hexdigest()
     encoded_timestamp = (
         md5(
             (
                 str(timestamp)
                 + "42sxgHoTPTKbt0uZxPJ7ssOvtXr3ZgZ1"
-                + "slide"
+                + captcha_type
                 + captcha_key
             ).encode("utf-8")
         ).hexdigest()

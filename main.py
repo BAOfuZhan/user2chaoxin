@@ -55,9 +55,10 @@ get_current_dayofweek = lambda action: _now(action).strftime("%A")
 
 
 SLEEPTIME = 0.05  # 每次抢座的间隔（减少到0.05秒以加快速度）
-ENDTIME = "17:20:00"  # 根据学校的预约座位时间+1min即可
+ENDTIME = "22:20:00"  # 根据学校的预约座位时间+1min即可
 
 ENABLE_SLIDER = False  # 是否有滑块验证（调试阶段先关闭）
+ENABLE_TEXTCLICK = True  # 是否有选字验证码（需要图灵云打码平台）
 MAX_ATTEMPT = 30  # 最大尝试次数（减少到30次，确保3个配置都能尝试）
 RESERVE_NEXT_DAY = False  # 预约明天而不是今天的
 
@@ -77,8 +78,8 @@ FIRST_SUBMIT_OFFSET_MS = 4
 # TARGET_OFFSET2_MS / TARGET_OFFSET3_MS:
 # 在第一次失败后，再额外延迟多少毫秒提交第二 / 第三次带验证码的请求
 # 例如：1200ms、1500ms
-TARGET_OFFSET2_MS = 12
-TARGET_OFFSET3_MS = 16
+TARGET_OFFSET2_MS = 120
+TARGET_OFFSET3_MS = 1600
 
 
 def _get_beijing_target_from_endtime() -> datetime.datetime:
@@ -185,6 +186,7 @@ def strategic_first_attempt(
             sleep_time=SLEEPTIME,
             max_attempt=MAX_ATTEMPT,
             enable_slider=ENABLE_SLIDER,
+            enable_textclick=ENABLE_TEXTCLICK,
             reserve_next_day=RESERVE_NEXT_DAY,
         )
         s.get_login_status()
@@ -199,33 +201,57 @@ def strategic_first_attempt(
             time.sleep(0.1)
 
         captcha1 = captcha2 = captcha3 = ""
+        # 根据开关决定是否预热验证码
         if ENABLE_SLIDER:
-            # 第一份 captcha，用于第一次提交
-            captcha1 = s.resolve_captcha()
+            # 滑块验证：预先获取三份 validate
+            captcha1 = s.resolve_captcha("slide")
             if not captcha1:
                 logging.warning(
-                    "[strategic] First captcha failed or empty, retrying once more"
+                    "[strategic] First slider captcha failed or empty, retrying once more"
                 )
-                captcha1 = s.resolve_captcha()
-            logging.info(f"[strategic] Pre-resolved captcha1: {captcha1}")
+                captcha1 = s.resolve_captcha("slide")
+            logging.info(f"[strategic] Pre-resolved slider captcha1: {captcha1}")
 
-            # 第二份 captcha，用于第二次提交
-            captcha2 = s.resolve_captcha()
+            captcha2 = s.resolve_captcha("slide")
             if not captcha2:
                 logging.warning(
-                    "[strategic] Second captcha failed or empty, retrying once more"
+                    "[strategic] Second slider captcha failed or empty, retrying once more"
                 )
-                captcha2 = s.resolve_captcha()
-            logging.info(f"[strategic] Pre-resolved captcha2: {captcha2}")
+                captcha2 = s.resolve_captcha("slide")
+            logging.info(f"[strategic] Pre-resolved slider captcha2: {captcha2}")
 
-            # 第三份 captcha，用于第三次提交
-            captcha3 = s.resolve_captcha()
+            captcha3 = s.resolve_captcha("slide")
             if not captcha3:
                 logging.warning(
-                    "[strategic] Third captcha failed or empty, retrying once more"
+                    "[strategic] Third slider captcha failed or empty, retrying once more"
                 )
-                captcha3 = s.resolve_captcha()
-            logging.info(f"[strategic] Pre-resolved captcha3: {captcha3}")
+                captcha3 = s.resolve_captcha("slide")
+            logging.info(f"[strategic] Pre-resolved slider captcha3: {captcha3}")
+        elif ENABLE_TEXTCLICK:
+            # 选字验证：预先获取三份 validate
+            captcha1 = s.resolve_captcha("textclick")
+            if not captcha1:
+                logging.warning(
+                    "[strategic] First textclick captcha failed or empty, retrying once more"
+                )
+                captcha1 = s.resolve_captcha("textclick")
+            logging.info(f"[strategic] Pre-resolved textclick captcha1: {captcha1}")
+
+            captcha2 = s.resolve_captcha("textclick")
+            if not captcha2:
+                logging.warning(
+                    "[strategic] Second textclick captcha failed or empty, retrying once more"
+                )
+                captcha2 = s.resolve_captcha("textclick")
+            logging.info(f"[strategic] Pre-resolved textclick captcha2: {captcha2}")
+
+            captcha3 = s.resolve_captcha("textclick")
+            if not captcha3:
+                logging.warning(
+                    "[strategic] Third textclick captcha failed or empty, retrying once more"
+                )
+                captcha3 = s.resolve_captcha("textclick")
+            logging.info(f"[strategic] Pre-resolved textclick captcha3: {captcha3}")
 
         # 3. 第一次提交：在目标时间 + FIRST_SUBMIT_OFFSET_MS 毫秒时获取页面 token，获取后立即提交
         token_fetch_dt1 = target_dt + datetime.timedelta(milliseconds=FIRST_SUBMIT_OFFSET_MS)
@@ -342,7 +368,7 @@ def login_and_reserve(
     users, usernames, passwords, action, success_list=None, sessions=None
 ):
     logging.info(
-        f"Global settings: \nSLEEPTIME: {SLEEPTIME}\nENDTIME: {ENDTIME}\nENABLE_SLIDER: {ENABLE_SLIDER}\nRESERVE_NEXT_DAY: {RESERVE_NEXT_DAY}"
+        f"Global settings: \nSLEEPTIME: {SLEEPTIME}\nENDTIME: {ENDTIME}\nENABLE_SLIDER: {ENABLE_SLIDER}\nENABLE_TEXTCLICK: {ENABLE_TEXTCLICK}\nRESERVE_NEXT_DAY: {RESERVE_NEXT_DAY}"
     )
 
     usernames_list, passwords_list = None, None
@@ -407,6 +433,7 @@ def login_and_reserve(
                         sleep_time=SLEEPTIME,
                         max_attempt=MAX_ATTEMPT,
                         enable_slider=ENABLE_SLIDER,
+                        enable_textclick=ENABLE_TEXTCLICK,
                         reserve_next_day=RESERVE_NEXT_DAY,
                     )
                     s.get_login_status()
@@ -422,6 +449,7 @@ def login_and_reserve(
                     sleep_time=SLEEPTIME,
                     max_attempt=MAX_ATTEMPT,
                     enable_slider=ENABLE_SLIDER,
+                    enable_textclick=ENABLE_TEXTCLICK,
                     reserve_next_day=RESERVE_NEXT_DAY,
                 )
                 s.get_login_status()
@@ -501,7 +529,7 @@ def main(users, action=False):
 
 def debug(users, action=False):
     logging.info(
-        f"Global settings: \nSLEEPTIME: {SLEEPTIME}\nENDTIME: {ENDTIME}\nENABLE_SLIDER: {ENABLE_SLIDER}\nRESERVE_NEXT_DAY: {RESERVE_NEXT_DAY}"
+        f"Global settings: \nSLEEPTIME: {SLEEPTIME}\nENDTIME: {ENDTIME}\nENABLE_SLIDER: {ENABLE_SLIDER}\nENABLE_TEXTCLICK: {ENABLE_TEXTCLICK}\nRESERVE_NEXT_DAY: {RESERVE_NEXT_DAY}"
     )
     suc = False
     logging.info(f" Debug Mode start! , action {'on' if action else 'off'}")
@@ -556,6 +584,7 @@ def debug(users, action=False):
             sleep_time=SLEEPTIME,
             max_attempt=MAX_ATTEMPT,
             enable_slider=ENABLE_SLIDER,
+            enable_textclick=ENABLE_TEXTCLICK,
             reserve_next_day=RESERVE_NEXT_DAY,
         )
         s.get_login_status()
@@ -573,6 +602,7 @@ def get_roomid(args1, args2):
         sleep_time=SLEEPTIME,
         max_attempt=MAX_ATTEMPT,
         enable_slider=ENABLE_SLIDER,
+        enable_textclick=ENABLE_TEXTCLICK,
         reserve_next_day=RESERVE_NEXT_DAY,
     )
     s.get_login_status()

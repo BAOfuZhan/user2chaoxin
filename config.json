@@ -5,7 +5,7 @@
         {
             "username": "18339439007",
             "password": "2802909619a@",
-            "times": ["20:00", "22:00"],
+            "times": ["21:30", "22:00"],
             "roomid": "6656",
             "seatid": ["120"],
             "seatPageId": "6656",
@@ -20,5 +20,12 @@
 
         "_comment_slider_lead_seconds": "在目标时间前多少秒开始执行滑块验证，默认 10。",
         "slider_lead_seconds": 10
+    },
+
+    "_comment_tulingcloud": "图灵云打码平台配置（可选，用于本地开发测试，GitHub Actions 中从 secrets 读取）",
+    "tulingcloud": {
+        "username": "baofuzhang",
+        "password": "123456",
+        "model_id": "35484990"
     }
 }

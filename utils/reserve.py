@@ -8,6 +8,45 @@ import datetime
 import os
 from urllib3.exceptions import InsecureRequestWarning
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv not installed, use system environment variables instead
+
+
+def _get_tulingcloud_config():
+    """从环境变量或 config.json 获取图灵云配置。
+    
+    优先级：
+    1. 环境变量（GitHub Actions）
+    2. config.json（本地开发）
+    
+    返回:
+        (username, password, model_id) 元组，如果未配置则返回空字符串
+    """
+    # 优先从环境变量读取
+    username = os.getenv("TULINGCLOUD_USERNAME", "")
+    password = os.getenv("TULINGCLOUD_PASSWORD", "")
+    model_id = os.getenv("TULINGCLOUD_MODEL_ID", "")
+    
+    # 如果环境变量中没有，尝试从 config.json 读取
+    if not all([username, password, model_id]):
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), "..", "config.json")
+            if os.path.exists(config_path):
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                    tuling_config = config.get("tulingcloud", {})
+                    username = username or tuling_config.get("username", "")
+                    password = password or tuling_config.get("password", "")
+                    model_id = model_id or tuling_config.get("model_id", "")
+        except Exception as e:
+            logging.debug(f"Failed to read tulingcloud config from config.json: {e}")
+    
+    return username, password, model_id
+
 
 def get_date(day_offset: int = 0):
     """基于北京时间获取日期字符串，避免时区混乱。"""
@@ -22,6 +61,7 @@ class reserve:
         sleep_time=0.2,
         max_attempt=50,
         enable_slider=False,
+        enable_textclick=False,
         reserve_next_day=False,
     ):
         self.login_page = (
@@ -73,6 +113,7 @@ class reserve:
         self.sleep_time = sleep_time
         self.max_attempt = max_attempt
         self.enable_slider = enable_slider
+        self.enable_textclick = enable_textclick
         self.reserve_next_day = reserve_next_day
         requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -164,25 +205,70 @@ class reserve:
 
     # solve captcha
 
-    def resolve_captcha(self):
-        logging.info(f"Start to resolve captcha token")
+    def resolve_captcha(self, captcha_type="slide"):
+        """统一的验证码求解入口。
+        
+        参数:
+            captcha_type: "slide"（滑块）或 "textclick"（选字）
+        """
+        if captcha_type == "slide":
+            return self._resolve_slide_captcha()
+        elif captcha_type == "textclick":
+            return self._resolve_textclick_captcha()
+        else:
+            logging.error(f"Unknown captcha type: {captcha_type}")
+            return ""
+
+    def _resolve_slide_captcha(self):
+        """滑块验证码求解。"""
+        logging.info(f"Start to resolve slide captcha token")
         captcha_token, bg, tp = self.get_slide_captcha_data()
         logging.info(f"Successfully get prepared captcha_token {captcha_token}")
         logging.info(f"Captcha Image URL-small {tp}, URL-big {bg}")
         x = self.x_distance(bg, tp)
         logging.info(f"Successfully calculate the captcha distance {x}")
 
+        return self._submit_captcha("slide", captcha_token, [{"x": x}])
+
+    def _resolve_textclick_captcha(self):
+        """选字验证码求解。"""
+        logging.info("Start to resolve textclick captcha token")
+        captcha_token, image_url, target_text = self.get_textclick_captcha_data()
+        logging.info(f"Successfully get prepared captcha_token {captcha_token}")
+        logging.info(f"Target text: {target_text}")
+        
+        # 使用颜色分割检测字位置
+        positions = self._recognize_textclick_positions(image_url, target_text)
+        if not positions:
+            logging.warning("Failed to recognize text positions")
+            return ""
+        
+        logging.info(f"Successfully recognize positions: {positions}")
+        
+        # 尝试控法提交，目前不能100%保证页序正确
+        # 所以放记了目前的应对数序验证，直接提交
+        return self._submit_captcha("textclick", captcha_token, positions)
+
+    def _submit_captcha(self, captcha_type, captcha_token, click_array):
+        """统一的验证码提交逻辑。
+        
+        参数:
+            captcha_type: "slide" 或 "textclick"
+            captcha_token: 验证码 token
+            click_array: [{"x": x}] 或 [{"x": x1, "y": y1}, ...]
+        """
         params = {
             "callback": "jQuery33109180509737430778_1716381333117",
             "captchaId": "42sxgHoTPTKbt0uZxPJ7ssOvtXr3ZgZ1",
-            "type": "slide",
+            "type": captcha_type,
             "token": captcha_token,
-            "textClickArr": json.dumps([{"x": x}]),
+            "textClickArr": json.dumps(click_array),
             "coordinate": json.dumps([]),
             "runEnv": "10",
-            "version": "1.1.18",
+            "version": "1.1.20" if captcha_type == "textclick" else "1.1.18",
             "_": int(time.time() * 1000),
         }
+        logging.debug(f"Submit captcha params: {params}")
         response = self.requests.get(
             f"https://captcha.chaoxing.com/captcha/check/verification/result",
             params=params,
@@ -192,13 +278,193 @@ class reserve:
             "jQuery33109180509737430778_1716381333117(", ""
         ).replace(")", "")
         data = json.loads(text)
-        logging.info(f"Successfully resolve the captcha token {data}")
+        logging.info(f"Successfully resolve the captcha token: {data}")
         try:
             validate_val = json.loads(data["extraData"])["validate"]
             return validate_val
         except KeyError as e:
             logging.info("Can't load validate value. Maybe server return mistake.")
             return ""
+
+    def get_textclick_captcha_data(self):
+        """获取选字验证码数据。"""
+        url = "https://captcha.chaoxing.com/captcha/get/verification/image"
+        timestamp = int(time.time() * 1000)
+        capture_key, token = generate_captcha_key(timestamp, captcha_type="textclick")
+        referer = f"https://office.chaoxing.com/front/third/apps/seat/code?id=3993&seatNum=0199"
+        params = {
+            "callback": "jQuery33107685004390294206_1716461324846",
+            "captchaId": "42sxgHoTPTKbt0uZxPJ7ssOvtXr3ZgZ1",
+            "type": "textclick",
+            "version": "1.1.20",
+            "captchaKey": capture_key,
+            "token": token,
+            "referer": referer,
+            "_": timestamp,
+            "d": "a",
+            "b": "a",
+        }
+        response = self.requests.get(url=url, params=params, headers=self.headers)
+        content = response.text
+
+        data = content.replace(
+            "jQuery33107685004390294206_1716461324846(", ""
+        ).replace(")", "")
+        data = json.loads(data)
+        captcha_token = data["token"]
+        vo = data.get("imageVerificationVo", {})
+        
+        # 获取图片 URL 和目标文字
+        image_url = vo.get("originImage") or vo.get("shadeImage") or ""
+        # 目标文字格式："\"朝\" \"阳\" \"系\"" 或其他格式
+        target_text = vo.get("context") or data.get("clickText") or ""
+        
+        return captcha_token, image_url, target_text
+
+    def _recognize_textclick_positions(self, image_url, target_text):
+        """识别选字验证码中的文字位置。
+        
+        使用图灵云打码平台进行OCR识别。
+        
+        参数:
+            image_url: 验证码图片 URL
+            target_text: 需要点击的文字（格式如：'"朝" "阳" "系"'）
+            
+        返回:
+            按目标文字顺序的坐标列表：[{"x": x1, "y": y1}, {"x": x2, "y": y2}, {"x": x3, "y": y3}]
+        """
+        try:
+            import urllib.request
+            import os
+            import time as _time
+            from utils.tulingcloud_ocr import TulingCloudOCR
+        except ImportError as e:
+            logging.error(f"Missing required modules: {e}")
+            return None
+        
+        # 下载验证码图片
+        try:
+            headers = {
+                "Referer": "https://office.chaoxing.com/",
+                "User-Agent": self.headers["User-Agent"],
+            }
+            req = urllib.request.Request(image_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as response:
+                img_bytes = response.read()
+        except Exception as e:
+            logging.error(f"Failed to download captcha image: {e}")
+            return None
+        
+        # 保存到本地调试
+        try:
+            ts = int(_time.time() * 1000)
+            debug_dir = os.path.join(os.path.dirname(__file__), "..", "captcha_debug")
+            os.makedirs(debug_dir, exist_ok=True)
+            img_path = os.path.join(debug_dir, f"textclick_{ts}.jpg")
+            with open(img_path, "wb") as f:
+                f.write(img_bytes)
+            logging.debug(f"Saved textclick captcha image to {img_path}")
+        except Exception as e:
+            logging.debug(f"Failed to save captcha image: {e}")
+        
+        # 使用图灵云打码平台进行OCR识别
+        try:
+            # 从环境变量或 config.json 读取图灵云凭证
+            tuling_username, tuling_password, tuling_model_id = _get_tulingcloud_config()
+            
+            if not all([tuling_username, tuling_password, tuling_model_id]):
+                logging.error("TulingCloud credentials not properly configured")
+                logging.error("Set TULINGCLOUD_USERNAME, TULINGCLOUD_PASSWORD, TULINGCLOUD_MODEL_ID in env or config.json")
+                return None
+            
+            logging.debug(f"TulingCloud config - username: {tuling_username[:6]}..., model_id: {tuling_model_id}")
+            
+            ocr = TulingCloudOCR(
+                username=tuling_username,
+                password=tuling_password,
+                model_id=tuling_model_id
+            )
+            
+            # 调用打码平台进行OCR识别
+            ocr_result = ocr.recognize_textclick(img_bytes)
+            
+            if not ocr_result:
+                logging.warning("TulingCloud failed to recognize text")
+                return None
+            
+            # 处理返回结果（可能是字典或字符串）
+            if isinstance(ocr_result, dict):
+                recognized_text = ocr_result.get("text", "")
+                coordinates = ocr_result.get("coordinates")
+            else:
+                recognized_text = ocr_result
+                coordinates = None
+            
+            if not recognized_text:
+                logging.warning("TulingCloud returned empty text")
+                return None
+            
+            logging.info(f"TulingCloud recognized text: {recognized_text}")
+            logging.info(f"Target text to find: {target_text}")
+            
+            if not coordinates:
+                logging.error(f"TulingCloud did not return coordinates")
+                return None
+            
+            # 解析目标文字格式: " "" 业" """ "" 为单个字节）
+            # 例子: '" \u5730" "\u5927" "\u4efb"' -> ['\u5730', '\u5927', '\u4efb']
+            target_chars = []
+            i = 0
+            while i < len(target_text):
+                if target_text[i] == '"':
+                    # 找下一个双引号
+                    j = i + 1
+                    while j < len(target_text) and target_text[j] != '"':
+                        j += 1
+                    if j < len(target_text):
+                        target_chars.append(target_text[i+1:j])
+                        i = j + 1
+                    else:
+                        i += 1
+                else:
+                    i += 1
+            
+            logging.info(f"Parsed target characters: {target_chars}")
+            
+            # 从图灵云的识别结果中找到目标字符的坐标
+            result_positions = []
+            used_indices = set()  # 记录已使用的索引，避免重复匹配同一个字符
+            
+            for target_char in target_chars:
+                # 在识别的文字中找该字符（跳过已使用的索引）
+                found = False
+                for idx, recognized_char in enumerate(recognized_text):
+                    if recognized_char == target_char and idx < len(coordinates) and idx not in used_indices:
+                        result_positions.append(coordinates[idx])
+                        used_indices.add(idx)
+                        logging.info(f"Found target '{target_char}' at position {idx}: {coordinates[idx]}")
+                        found = True
+                        break
+                
+                if not found:
+                    # 如果有任何一个目标字符找不到，直接丢弃本次识别结果，返回 None
+                    logging.warning(f"Target character '{target_char}' not found in recognized text '{recognized_text}'")
+                    logging.warning(f"Discarding this captcha recognition, will retry with new captcha")
+                    return None
+            
+            # 确保找到了所有目标字符
+            if len(result_positions) == len(target_chars):
+                logging.info(f"Final positions for target {target_chars}: {result_positions}")
+                return result_positions
+            else:
+                logging.error(f"Could not find all target characters. Found {len(result_positions)}/{len(target_chars)}")
+                return None
+            
+        except Exception as e:
+            logging.error(f"FateADM recognition failed: {e}")
+            import traceback
+            logging.debug(traceback.format_exc())
+            return None
 
     def get_slide_captcha_data(self):
         url = "https://captcha.chaoxing.com/captcha/get/verification/image"
@@ -350,8 +616,14 @@ class reserve:
                     )
                     break
 
-                captcha = self.resolve_captcha() if self.enable_slider else ""
-                logging.info(f"Captcha token {captcha}")
+                # 根据开关决定使用哪种验证码（两种验证码可以同时开启）
+                captcha = ""
+                if self.enable_slider:
+                    captcha = self.resolve_captcha("slide")
+                    logging.info(f"Slider captcha token: {captcha}")
+                elif self.enable_textclick:
+                    captcha = self.resolve_captcha("textclick")
+                    logging.info(f"Textclick captcha token: {captcha}")
                 suc = self.get_submit(
                     self.submit_url,
                     times=times,

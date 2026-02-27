@@ -14,8 +14,8 @@ from utils import reserve as Reserve
 # ======================================================
 
 # TODO: 在这里填写你的测试账号信息
-TEST_USERNAME = ""
-TEST_PASSWORD = ""
+TEST_USERNAME = "18339439007"
+TEST_PASSWORD = "2802909619a@"
 
 # 教室/房间、座位、时间段
 TEST_ROOM_ID = "9928"          # 房间号，例如 9928
@@ -367,6 +367,84 @@ def test_captcha_stash_three(interval_sec: float = 2.0):
     )
 
 
+def test_textclick_captcha(attempts: int = 3):
+    """测试选字验证码（文字点击验证）。
+    
+    策略：
+    - 登录一次
+    - 获取选字验证码
+    - 使用 OCR 识别文字位置
+    - 提交验证并检查结果
+    - 可以多次尝试以测试稳定性
+    """
+    s, first_seat = _build_session()
+    if s is None:
+        return
+    
+    logging.info(f"[test-textclick] Start textclick CAPTCHA test, attempts={attempts}")
+    
+    successes = 0
+    failures = 0
+    
+    for attempt in range(1, attempts + 1):
+        logging.info(f"\n[test-textclick] Attempt {attempt}/{attempts}")
+        
+        try:
+            # 获取选字验证码数据
+            logging.info("[test-textclick] Getting textclick captcha data...")
+            captcha_token, image_url, target_text = s.get_textclick_captcha_data()
+            
+            if not captcha_token or not image_url:
+                logging.error("[test-textclick] Failed to get captcha data")
+                failures += 1
+                continue
+            
+            logging.info(f"[test-textclick] Token: {captcha_token}")
+            logging.info(f"[test-textclick] Target text: {target_text}")
+            logging.info(f"[test-textclick] Image URL: {image_url}")
+            
+            # 使用 OCR 识别坐标
+            logging.info("[test-textclick] Recognizing text positions with OCR...")
+            positions = s._recognize_textclick_positions(image_url, target_text)
+            
+            if not positions:
+                logging.error("[test-textclick] Failed to recognize positions")
+                failures += 1
+                continue
+            
+            logging.info(f"[test-textclick] Recognized positions: {positions}")
+            
+            # 提交验证
+            logging.info("[test-textclick] Submitting verification...")
+            validate_token = s._submit_captcha("textclick", captcha_token, positions)
+            
+            if validate_token:
+                logging.info(f"✅ [test-textclick] Attempt {attempt} SUCCESS! Token: {validate_token}")
+                successes += 1
+            else:
+                logging.warning(f"❌ [test-textclick] Attempt {attempt} FAILED (result=false)")
+                failures += 1
+        
+        except Exception as e:
+            logging.error(f"[test-textclick] Attempt {attempt} ERROR: {e}", exc_info=True)
+            failures += 1
+        
+        # 间隔等待
+        if attempt < attempts:
+            logging.info("[test-textclick] Waiting 2 seconds before next attempt...")
+            time.sleep(2)
+    
+    # 测试总结
+    logging.info("\n" + "=" * 60)
+    logging.info("[test-textclick] Test Summary")
+    logging.info("=" * 60)
+    logging.info(f"Total attempts: {attempts}")
+    logging.info(f"Successes: {successes}")
+    logging.info(f"Failures: {failures}")
+    logging.info(f"Success rate: {successes}/{attempts} ({100*successes//attempts if attempts > 0 else 0}%)")
+    logging.info("=" * 60)
+
+
 if __name__ == "__main__":
     print("================ Token/Captcha 测试菜单 ================")
     print("1. 测试登录后的页面 token 有效时间 (token lifetime)")
@@ -374,7 +452,8 @@ if __name__ == "__main__":
     print("3. 测试滑块验证码是否一次性 (captcha single-use)")
     print("4. 测试滑块验证码首次在指定延迟后使用 (captcha first-use delay)")
     print("5. 测试是否可以囤三份 captcha 并间隔 2 秒依次使用 (captcha stash three)")
-    choice = input("请输入选项 (1/2/3/4/5): ").strip()
+    print("6. 测试选字验证码（文字点击）⭐ NEW")
+    choice = input("请输入选项 (1/2/3/4/5/6): ").strip()
 
     if choice == "1":
         test_login_token_lifetime()
@@ -388,5 +467,8 @@ if __name__ == "__main__":
     elif choice == "5":
         # 默认三次间隔 2 秒，可以在函数调用里改间隔
         test_captcha_stash_three(2.0)
+    elif choice == "6":
+        # 测试选字验证码，默认尝试 3 次
+        test_textclick_captcha(attempts=3)
     else:
         print("无效选项，已退出。")
