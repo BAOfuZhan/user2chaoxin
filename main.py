@@ -83,7 +83,7 @@ TARGET_OFFSET3_MS = 1600
 
 
 def _get_beijing_target_from_endtime() -> datetime.datetime:
-    """根据 ENDTIME 计算目标时间（北京时间，当天 ENDTIME 减 1 分钟）。"""
+    """根据 ENDTIME 计算目标时间（北京时间，当天 ENDTIME 减 40 秒）。"""
     today = _beijing_now().date()
     h, m, s = map(int, ENDTIME.split(":"))
     end_dt = datetime.datetime(
@@ -95,7 +95,7 @@ def _get_beijing_target_from_endtime() -> datetime.datetime:
         second=s,
         tzinfo=ZoneInfo("Asia/Shanghai"),
     )
-    return end_dt - datetime.timedelta(minutes=1)
+    return end_dt - datetime.timedelta(seconds=40)
 
 
 def strategic_first_attempt(
