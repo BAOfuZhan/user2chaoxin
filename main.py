@@ -96,7 +96,7 @@ def _get_beijing_target_from_endtime() -> datetime.datetime:
         tzinfo=ZoneInfo("Asia/Shanghai"),
     )
     return end_dt - datetime.timedelta(seconds=40)
-
+    # return end_dt - datetime.timedelta(minutes=1)  # ENDTIME 前 1 分钟（60秒）
 
 def strategic_first_attempt(
     users,
