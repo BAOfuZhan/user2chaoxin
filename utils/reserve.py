@@ -32,7 +32,7 @@ class reserve:
         # 结构与浏览器中实际 URL 对齐：
         # /front/third/apps/seatengine/select?id=864&day=YYYY-MM-DD&backLevel=2&seatId=602&fidEnc=...
         self.url = (
-            "https://office.chaoxing.com/front/third/apps/seatengine/select?"
+            "https://office.chaoxing.com/front/third/apps/seat/select?"
             "id={roomId}&day={day}&backLevel=2&seatId={seatPageId}&fidEnc={fidEnc}"
         )
         # 使用新版 seatengine 提交接口，与前端保持一致
