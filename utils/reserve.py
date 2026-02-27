@@ -36,7 +36,7 @@ class reserve:
             "id={roomId}&day={day}&backLevel=2&seatId={seatPageId}&fidEnc={fidEnc}"
         )
         # 使用新版 seatengine 提交接口，与前端保持一致
-        self.submit_url = "https://office.chaoxing.com/data/apps/seatengine/submit"
+        self.submit_url = "https://office.chaoxing.com/data/apps/seat/submit"
         self.seat_url = "https://office.chaoxing.com/data/apps/seat/getusedtimes"
         self.login_url = "https://passport2.chaoxing.com/fanyalogin"
         self.token = ""
