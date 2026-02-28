@@ -5,7 +5,7 @@
         {
             "username": "",
             "password": "",
-            "times": ["20:00", "22:00"],
+            "times": ["15:00", "17:00"],
             "roomid": "6656",
             "seatid": ["120"],
             "seatPageId": "6656",
