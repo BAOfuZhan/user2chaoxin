@@ -228,30 +228,20 @@ def strategic_first_attempt(
                 captcha3 = s.resolve_captcha("slide")
             logging.info(f"[strategic] Pre-resolved slider captcha3: {captcha3}")
         elif ENABLE_TEXTCLICK:
-            # 选字验证：预先获取三份 validate
-            captcha1 = s.resolve_captcha("textclick")
-            if not captcha1:
-                logging.warning(
-                    "[strategic] First textclick captcha failed or empty, retrying once more"
-                )
-                captcha1 = s.resolve_captcha("textclick")
-            logging.info(f"[strategic] Pre-resolved textclick captcha1: {captcha1}")
+            # 选字验证：预先获取三份 validate（循环重试直到成功）
+            def get_textclick_with_retry(name: str, max_retries: int = 10) -> str:
+                for i in range(max_retries):
+                    captcha = s.resolve_captcha("textclick")
+                    if captcha:
+                        logging.info(f"[strategic] {name} textclick captcha resolved: {captcha}")
+                        return captcha
+                    logging.warning(f"[strategic] {name} textclick captcha failed, retrying ({i + 1}/{max_retries})")
+                    time.sleep(0.5)
+                logging.error(f"[strategic] {name} textclick captcha failed after {max_retries} retries")
+                return ""
 
-            captcha2 = s.resolve_captcha("textclick")
-            if not captcha2:
-                logging.warning(
-                    "[strategic] Second textclick captcha failed or empty, retrying once more"
-                )
-                captcha2 = s.resolve_captcha("textclick")
-            logging.info(f"[strategic] Pre-resolved textclick captcha2: {captcha2}")
-
-            captcha3 = s.resolve_captcha("textclick")
-            if not captcha3:
-                logging.warning(
-                    "[strategic] Third textclick captcha failed or empty, retrying once more"
-                )
-                captcha3 = s.resolve_captcha("textclick")
-            logging.info(f"[strategic] Pre-resolved textclick captcha3: {captcha3}")
+            captcha1 = get_textclick_with_retry("First")
+            captcha2 = get_textclick_with_retry("Second")
 
         # 3. 第一次提交：在目标时间 + FIRST_SUBMIT_OFFSET_MS 毫秒时获取页面 token，获取后立即提交
         token_fetch_dt1 = target_dt + datetime.timedelta(milliseconds=FIRST_SUBMIT_OFFSET_MS)
