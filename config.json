@@ -5,12 +5,52 @@
         {
             "username": "",
             "password": "",
-            "times": ["15:00", "17:00"],
-            "roomid": "6656",
-            "seatid": ["120"],
+            "times": ["17:00", "22:00"],
+            "roomid": "6670",
+            "seatid": ["007"],
             "seatPageId": "6656",
             "fidEnc": "e23eb03ef41afd60",
-            "daysofweek": ["Monday","Tuesday","Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            "daysofweek": ["Monday","Tuesday"]
+        },
+        {
+            "username": "",
+            "password": "",
+            "times": ["11:00", "22:00"],
+            "roomid": "6670",
+            "seatid": ["007"],
+            "seatPageId": "6656",
+            "fidEnc": "e23eb03ef41afd60",
+            "daysofweek": ["Wednesday"]
+        },
+        {
+            "username": "",
+            "password": "",
+            "times": ["13:00", "22:00"],
+            "roomid": "6670",
+            "seatid": ["007"],
+            "seatPageId": "6656",
+            "fidEnc": "e23eb03ef41afd60",
+            "daysofweek": ["Thursday"]
+        },
+        {
+            "username": "",
+            "password": "",
+            "times": ["14:00", "22:00"],
+            "roomid": "6670",
+            "seatid": ["007"],
+            "seatPageId": "6656",
+            "fidEnc": "e23eb03ef41afd60",
+            "daysofweek": ["Friday"]
+        },
+        {
+            "username": "",
+            "password": "",
+            "times": ["09:30", "22:00"],
+            "roomid": "6670",
+            "seatid": ["007"],
+            "seatPageId": "6656",
+            "fidEnc": "e23eb03ef41afd60",
+            "daysofweek": ["Saturday", "Sunday"]
         }
     ],
 
